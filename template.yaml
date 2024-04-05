@@ -1,0 +1,242 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  aws-conveyancer-dashboard
+
+  Sample SAM Template for aws-conveyancer-dashboard
+  
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 10
+
+Parameters:
+  BillingAPI: 
+    Type: String
+  NerAPI: 
+    Type: String
+  QnaAPI: 
+    Type: String
+  GoogleClientId:
+    Type: String
+  GoogleClientSecret:
+    Type: String
+  EmailFromAddressSource:
+    Type: String
+  
+
+Resources:
+  ConveDashboardFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      Role : !GetAtt ConveDashboardRole.Arn
+      FunctionName: ConveyancerDashboard
+      CodeUri: conveyancer-dashboard/
+      Handler: app.lambdaHandler
+      Runtime: nodejs16.x
+      Architectures:
+        - arm64
+      MemorySize: 256
+      Environment:
+        Variables: 
+          BILLINGAPI: !Ref BillingAPI
+          NERAPI : !Ref NerAPI
+          QNAAPI : !Ref QnaAPI
+      Events:
+        ConveDashboard:
+          Type: HttpApi # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:     
+            ApiId: !Ref DashHTTPAPIGW   
+            Path: /dashboard
+            Method: get
+            Auth:
+              Authorizer: GeneralAuth
+    
+    
+    Metadata: # Manage esbuild properties
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: "es2020"
+        Sourcemap: true
+        EntryPoints: 
+        - app.js
+    
+  #Second Function call
+  ConveDashFilterFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      Role : !GetAtt ConveDashboardRole.Arn
+      FunctionName: ConveDashboardFilter
+      CodeUri: dashboard-table-filtered/
+      Handler: app.lambdaHandler
+      Runtime: nodejs16.x
+      Architectures:
+        - arm64
+      MemorySize: 256
+      Events:
+        ConveDashFilter:
+          Type: HttpApi # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:     
+            ApiId: !Ref DashHTTPAPIGW   
+            Path: /tabledata
+            Method: get
+           
+    Metadata: # Manage esbuild properties
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: "es2020"
+        Sourcemap: true
+        EntryPoints: 
+        - app.js
+
+  DashHTTPAPIGW:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowHeaders:
+          - '*'
+        AllowMethods:
+          - "POST"
+          - "GET"
+          - "OPTIONS"
+          - "PUT"
+        AllowOrigins:
+          - "*"
+      Auth:
+        Authorizers:
+          GeneralAuth:
+            AuthorizationScopes:
+              - email
+              - aws.cognito.signin.user.admin
+              - openid
+              - phone
+            IdentitySource: "$request.header.Authorization"
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.us-east-1.amazonaws.com/${UserPool}
+              audience:
+                - !Ref UserPoolClient
+      # Auth:
+      #   DefaultAuthorizer: MyCognitoAuthorizer
+      #   Authorizers:
+      #     MyCognitoAuthorizer:
+      #       UserPoolArn: arn:aws:cognito-idp:us-east-1:115538910247:userpool/us-east-1_TuYIgoCSq
+      #       FunctionArn:
+      #         Fn::GetAtt:
+      #           - ConveDashboardFunction
+      #           - Arn
+      #       AuthorizerPayloadFormatVersion: 2.0   
+
+  DynamoDBConveReadPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: DynamoDBConveReadPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Action: [
+              "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:Query",
+                "dynamodb:BatchGetItem",
+                "dynamodb:DescribeTable"
+              ]
+            Resource:
+              - "*"
+      Roles:
+        - !Ref ConveDashboardRole
+
+  ConveDashboardRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+                - "apigateway.amazonaws.com"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  UserPool:
+    Type: AWS::Cognito::UserPool 
+    Properties: 
+      UserPoolName: Conveyancer Dashboard
+      AliasAttributes:
+        - email
+        - preferred_username
+      UsernameConfiguration:
+        CaseSensitive: false
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      Policies: 
+        PasswordPolicy: 
+          MinimumLength: 8
+          RequireLowercase : true
+          RequireSymbols: true
+          RequireUppercase: true
+          RequireNumbers : true
+      AutoVerifiedAttributes:
+        - email
+      EmailConfiguration:
+        EmailSendingAccount : COGNITO_DEFAULT
+        SourceArn: !Ref EmailFromAddressSource
+      MfaConfiguration: "OFF"
+      Schema: 
+        - AttributeDataType: String 
+          Name: email 
+          Required: true
+          Mutable: true
+
+  GoogleIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: "Google"
+      ProviderDetails:
+        client_id: !Ref GoogleClientId
+        client_secret: !Ref GoogleClientSecret
+        authorize_scopes: "profile email openid"
+      ProviderType: "Google"
+      AttributeMapping:
+        email: "email"
+        name : "names"
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient 
+    Properties: 
+      UserPoolId: !Ref UserPool 
+      ClientName: client-1
+      GenerateSecret: false 
+      SupportedIdentityProviders:
+        - COGNITO
+        - !Ref GoogleIdentityProvider
+      CallbackURLs: 
+        - http://localhost:5173/ 
+        - https://conveyancerdash.vercel.app/
+      LogoutURLs: 
+        - http://localhost:5173/ 
+        - https://conveyancerdash.vercel.app/
+      AllowedOAuthFlowsUserPoolClient: true
+      PreventUserExistenceErrors : ENABLED
+      AllowedOAuthFlows:
+        - code
+        - implicit 
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - phone
+        - aws.cognito.signin.user.admin
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties: 
+      Domain: conveydash
+      UserPoolId: !Ref UserPool
