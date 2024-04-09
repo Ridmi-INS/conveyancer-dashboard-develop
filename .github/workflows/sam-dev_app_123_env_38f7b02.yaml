@@ -2,10 +2,10 @@ name: sam-dev_app_123_env_38f7b02 Pipeline (Skyu Generated)
 'on':
   push:
     branches:
-      - master
+      - main
   workflow_dispatch: {}
   repository_dispatch:
-    types: pipeline_6e032d83-046d-4362-a0a6-2ddbe94350a6
+    types: pipeline_ccfebc0e-026e-4bdd-bf75-6284ef54e47c
 env:
   ENCODED_PIPELINE_SECRET: ${{secrets.CONVEYANCERDASHBOARDDEVELOP_SAMDEV_APP_123_ENV_38F7B02}}
   COMMIT_ID: ${{github.event.client_payload.commitId || github.sha || github.run_id}}
