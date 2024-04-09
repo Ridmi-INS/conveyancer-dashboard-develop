@@ -5,7 +5,7 @@ name: sam-dev_app_123_env_38f7b02 Pipeline (Skyu Generated)
       - main
   workflow_dispatch: {}
   repository_dispatch:
-    types: pipeline_067564d3-f23e-4da9-be81-d532a61afb85
+    types: pipeline_1f21dfb7-2736-4ef9-85f0-80bc361e9373
 env:
   ENCODED_PIPELINE_SECRET: ${{secrets.CONVEYANCERDASHBOARDDEVELOP_SAMDEV_APP_123_ENV_38F7B02}}
   COMMIT_ID: ${{github.event.client_payload.commitId || github.sha || github.run_id}}
@@ -213,7 +213,7 @@ jobs:
     permissions: write-all
     runs-on: ubuntu-latest
     needs:
-      - build-and-sync-web-app
+      - build-and-deploy-aws-sam
     if: github.event.client_payload.releaseData == null
     steps:
       - name: 'Run :: Decoding Secrets'
