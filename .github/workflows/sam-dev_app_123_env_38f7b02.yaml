@@ -5,7 +5,7 @@ name: sam-dev_app_123_env_38f7b02 Pipeline (Skyu Generated)
       - main
   workflow_dispatch: {}
   repository_dispatch:
-    types: pipeline_35c588e0-dd83-429b-8907-ef9c1103ade1
+    types: pipeline_c9450764-b1d2-4dd8-97e2-976c69a01b12
 env:
   ENCODED_PIPELINE_SECRET: ${{secrets.CONVEYANCERDASHBOARDDEVELOP_SAMDEV_APP_123_ENV_38F7B02}}
   COMMIT_ID: ${{github.event.client_payload.commitId || github.sha || github.run_id}}
@@ -157,6 +157,8 @@ jobs:
           env.GOOGLE_CLIENT_SECRET }}
           ParameterKey=EmailFromAddressSource,ParameterValue=${{
           env.EMAIL_FROM_ADRESS_SOURCE }}' --resolve-s3
+      - name: Step 1
+        run: echo "STEP 1 RUNNING"
   _status-success:
     name: _status Success
     permissions: write-all
