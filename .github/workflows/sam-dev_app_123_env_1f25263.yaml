@@ -148,7 +148,7 @@ jobs:
           ${{ env.APP_INSTALL_DEPS_COMMAND }} esbuild -g  && sam build
       - name: 'Run :: Deploy to Development'
         run: >-
-          sam deploy --stack-name  ${{ env.STACK_NAME }} --capabilities
+          sam deploy --stack-name  ${{ env.STACK_NAME }} --resolve-s3 false --capabilities
           CAPABILITY_IAM --parameter-overrides
           'ParameterKey=BillingAPI,ParameterValue=${{ env.BILLING_API }}
           ParameterKey=NerAPI,ParameterValue=${{ env.NER_API }}
