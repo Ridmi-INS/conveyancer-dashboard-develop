@@ -5,7 +5,7 @@ name: sam-dev_app_123_env_1f25263 Pipeline (Skyu Generated)
       - main
   workflow_dispatch: {}
   repository_dispatch:
-    types: pipeline_7e608abc-279c-40e1-a8ef-a5a7772dafe0
+    types: pipeline_77ad1aa3-4950-4612-90e0-09960bf0a6f3
 env:
   ENCODED_PIPELINE_SECRET: ${{secrets.CONVEYANCERDASHBOARDDEVELOP_SAMDEV_APP_123_ENV_1F25263}}
   COMMIT_ID: ${{github.event.client_payload.commitId || github.sha || github.run_id}}
@@ -148,7 +148,7 @@ jobs:
         run: |2-
 
               if [ "$SAM_BUILD_ARGS" != "" ]; then    
-              ${{ env.APP_INSTALL_DEPS_PRE_COMMAND }} &&     ${{ env.APP_INSTALL_DEPS_COMMAND }} esbuild -g &&     ${{ env.SAM_BUILD_COMMAND }} -t ${{ env.YML_PATH }} &&     ${{ env.SAM_BUILD_ARGS }}
+                ${{ env.APP_INSTALL_DEPS_PRE_COMMAND }} &&       ${{ env.APP_INSTALL_DEPS_COMMAND }} esbuild -g &&       ${{ env.SAM_BUILD_COMMAND }} -t ${{ env.YML_PATH }} &&       ${{ env.SAM_BUILD_ARGS }}
               else
                 ${{ env.APP_INSTALL_DEPS_PRE_COMMAND }} &&       ${{ env.APP_INSTALL_DEPS_COMMAND }} esbuild -g &&       ${{ env.SAM_BUILD_COMMAND }} -t ${{ env.YML_PATH }}
               fi
