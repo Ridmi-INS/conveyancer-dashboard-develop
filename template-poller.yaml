@@ -1,0 +1,428 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Transform: AWS::Serverless-2016-10-31
+
+Description: Oho Connector Poller
+
+Parameters:
+  Env:
+    Type: String
+  Version:
+    Type: String
+    Default: v0.1
+  LogLevel:
+    Type: String
+
+Globals:
+  Function:
+    Handler: index.handler
+    Runtime: nodejs20.x
+    Architectures:
+      - x86_64
+    Timeout: 30
+    Environment:
+      Variables:
+        ENV: !Ref Env
+        LOG_LEVEL: !Ref LogLevel
+
+Resources:
+  # Log Groups
+  PollerWorkflowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "PollerWorkflowLogGroup-${AWS::StackName}"
+      RetentionInDays: 7
+
+  # Step Function
+  PollerWorkflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${AWS::StackName}-PollerWorkflow
+      DefinitionUri: statemachine/poller-workflow.asl.yaml
+      DefinitionSubstitutions:
+        PreparePollerJobsFunction: !GetAtt PreparePollerJobsFunction.Arn
+        JobEventBus: !GetAtt JobEventBus.Name
+        # FetchPayloadFunction:  #To be passed in as parameter
+        CreateNextJob: !GetAtt CreateNextJobFunction.Arn
+        ReportJobProgressFunction: !GetAtt ReportJobProgressLambda.Arn
+        ReportBatchProgressFunction: !GetAtt ReportBatchProgressLambda.Arn
+      Logging:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt PollerWorkflowLogGroup.Arn
+        IncludeExecutionData: true
+        Level: "ALL"
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref PreparePollerJobsFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CreateNextJobFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ReportJobProgressLambda
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ReportBatchProgressLambda
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref JobEventBus
+        # To provide permission to FetchPayload as it is client specific (Makes previous permissions obsolete)
+        - LambdaInvokePolicy:
+            FunctionName: "*"
+        # For step function logs in Cloudwatch
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:*
+              Resource: "*"
+      Type: STANDARD
+      Tracing:
+        Enabled: False
+
+  # Event Bus
+  JobEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub "${AWS::StackName}-jobeventbus"
+
+  # S3 Bucket
+  PayloadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-s3-bucket"
+
+  # Lambdas
+  PreparePollerJobsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/prepare-poller-jobs/
+      Policies:
+        - SSMParameterReadPolicy:
+            ParameterName: "*"
+
+  CreateNextJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/create-next-job/
+
+  # Report Job Progress Lambda
+  ReportJobProgressLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/report-job-progress/
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "lambdasecuritygroup"]]
+        SubnetIds:
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "subnet1"]]
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "subnet2"]]
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "subnet3"]]
+      Policies:
+        - Statement:
+            - Sid: AllowDbConnect
+              Effect: Allow
+              Action:
+                - rds-db:connect
+              Resource:
+                - !Join [
+                    "",
+                    [
+                      !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:",
+                      Fn::ImportValue:
+                        !Join [
+                          "-",
+                          [
+                            "oho",
+                            !Ref Env,
+                            "connector",
+                            "rdsclusterresourceid",
+                          ],
+                        ],
+                      "/*",
+                    ],
+                  ]
+      Environment:
+        Variables:
+          AWS_STACK_REGION: !Ref AWS::Region
+          AWS_RDS_PROXY_ENDPOINT:
+            Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "rdscluserendpoint"]]
+          AWS_RDS_PORT:
+            Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "rdsport"]]
+          AWS_DB_USERNAME:
+            !Join [
+              "",
+              [
+                "{{resolve:secretsmanager:",
+                Fn::ImportValue:
+                  !Join ["-", ["oho", !Ref Env, "connector", "secretarn"]],
+                ":SecretString:username}}",
+              ],
+            ]
+          AWS_DB_NAME:
+            Fn::ImportValue: !Join ["-", ["oho", !Ref Env, "connector", "name"]]
+
+  # Report Batch Progress Lambda
+  ReportBatchProgressLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/report-batch-progress/
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "lambdasecuritygroup"]]
+        SubnetIds:
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "subnet1"]]
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "subnet2"]]
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "subnet3"]]
+      Policies:
+        - Statement:
+            - Sid: AllowDbConnect
+              Effect: Allow
+              Action:
+                - rds-db:connect
+              Resource:
+                - !Join [
+                    "",
+                    [
+                      !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:",
+                      Fn::ImportValue:
+                        !Join [
+                          "-",
+                          [
+                            "oho",
+                            !Ref Env,
+                            "connector",
+                            "rdsclusterresourceid",
+                          ],
+                        ],
+                      "/*",
+                    ],
+                  ]
+      Environment:
+        Variables:
+          AWS_STACK_REGION: !Ref AWS::Region
+          AWS_RDS_PROXY_ENDPOINT:
+            Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "rdscluserendpoint"]]
+          AWS_RDS_PORT:
+            Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "rdsport"]]
+          AWS_DB_USERNAME:
+            !Join [
+              "",
+              [
+                "{{resolve:secretsmanager:",
+                Fn::ImportValue:
+                  !Join ["-", ["oho", !Ref Env, "connector", "secretarn"]],
+                ":SecretString:username}}",
+              ],
+            ]
+          AWS_DB_NAME:
+            Fn::ImportValue: !Join ["-", ["oho", !Ref Env, "connector", "name"]]
+
+  # Queue for line item
+  LineItemQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}-LineItemQueue.fifo
+      FifoQueue: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt LineItemDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  # Dead letter queue for line item queue
+  LineItemDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}-LineItemDeadLetterQueueName.fifo
+      FifoQueue: true
+
+    # Lambda for line item
+  LineItemLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/line-item
+      Handler: app.lineItemHandler
+      Role: !GetAtt LineItemLambdaRole.Arn
+      # ReservedConcurrentExecutions: 20
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "lambdasecuritygroup"]]
+        SubnetIds:
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "subnet1"]]
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "subnet2"]]
+          - Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "subnet3"]]
+      Environment:
+        Variables:
+          AWS_STACK_REGION: !Ref AWS::Region
+          AWS_RDS_PROXY_ENDPOINT:
+            Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "rdscluserendpoint"]]
+          AWS_RDS_PORT:
+            Fn::ImportValue:
+              !Join ["-", ["oho", !Ref Env, "connector", "rdsport"]]
+          AWS_DB_USERNAME:
+            !Join [
+              "",
+              [
+                "{{resolve:secretsmanager:",
+                Fn::ImportValue:
+                  !Join ["-", ["oho", !Ref Env, "connector", "secretarn"]],
+                ":SecretString:username}}",
+              ],
+            ]
+          AWS_DB_NAME:
+            Fn::ImportValue: !Join ["-", ["oho", !Ref Env, "connector", "name"]]
+
+  # Role for line item lambda
+  LineItemLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: allowLambdaLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:*
+                Resource: arn:aws:logs:*:*:*
+        - PolicyName: allowSqs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:ChangeMessageVisibility
+                Resource: !GetAtt LineItemQueue.Arn
+        - PolicyName: rdsforlineitem
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              Effect: Allow
+              Action:
+                - rds-db:connect
+              Resource:
+                - !Join [
+                    "",
+                    [
+                      !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:",
+                      Fn::ImportValue:
+                        !Join [
+                          "-",
+                          [
+                            "oho",
+                            !Ref Env,
+                            "connector",
+                            "rdsclusterresourceid",
+                          ],
+                        ],
+                      "/*",
+                    ],
+                  ]
+        - PolicyName: Ec2access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              Action:
+                - "ec2:DescribeNetworkInterfaces"
+                - "ec2:CreateNetworkInterface"
+                - "ec2:DescribeInstances"
+                - "ec2:AttachNetworkInterface"
+                - "ec2:DeleteNetworkInterface"
+              Effect: Allow
+              Resource: "*"
+
+  # EventSourceMapping for LineItemQueue and LineItemLambda
+  LineItemEventSourceMapper:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1
+      Enabled: true
+      EventSourceArn: !GetAtt LineItemQueue.Arn
+      FunctionName: !GetAtt LineItemLambda.Arn
+
+Outputs:
+  PollerWorkFlowStepFunction:
+    Description: Poller workflow step function
+    Value: !GetAtt PollerWorkflow.Arn
+    Export:
+      Name:
+        !Join [
+          "-",
+          ["oho", !Ref Env, "connector", "PollerWorkFlowStepFunctionArn"],
+        ]
+
+  PollerWorkFlowStepFunctionName:
+    Description: Poller workflow step function
+    Value: !GetAtt PollerWorkflow.Name
+    Export:
+      Name:
+        !Join [
+          "-",
+          ["oho", !Ref Env, "connector", "PollerWorkFlowStepFunctionName"],
+        ]
+
+  JobEventBusName:
+    Description: Job Eventbridge Event Bus
+    Value: !Ref JobEventBus
+    Export:
+      Name: !Join ["-", ["oho", !Ref Env, "connector", "JobEventBusName"]]
+
+  PayloadBucketArn:
+    Description: Payload bucket in S3
+    Value: !GetAtt PayloadBucket.Arn
+    Export:
+      Name: !Join ["-", ["oho", !Ref Env, "connector", "PayloadBucket"]]
+
+  PayloadProcessorQueueArn:
+    Description: Queue for payload processor
+    Value: !GetAtt LineItemQueue.Arn
+    Export:
+      Name:
+        !Join ["-", ["oho", !Ref Env, "connector", "PayloadProcessorQueueArn"]]
+
+  PayloadProcessorQueueName:
+    Description: Queue name for payload processor
+    Value: !GetAtt LineItemQueue.QueueName
+    Export:
+      Name:
+        !Join ["-", ["oho", !Ref Env, "connector", "PayloadProcessorQueueName"]]
+
+  PayloadProcessorDeadLetterQueueName:
+    Description: Dead letter queue for payload processor
+    Value: !GetAtt LineItemDeadLetterQueue.Arn
+    Export:
+      Name:
+        !Join [
+          "-",
+          ["oho", !Ref Env, "connector", "PayloadProcessorDeadLetterQueueArn"],
+        ]
+
