@@ -5,7 +5,7 @@ name: sam-dev_app_123_env_1f25263 Pipeline (Skyu Generated)
       - main
   workflow_dispatch: {}
   repository_dispatch:
-    types: pipeline_596570fd-2dda-4fc3-89ac-e79c4bb8e4fc
+    types: pipeline_a6716192-a645-4ba6-b8bb-6801a9d58450
 env:
   ENCODED_PIPELINE_SECRET: ${{secrets.CONVEYANCERDASHBOARDDEVELOP_SAMDEV_APP_123_ENV_1F25263}}
   COMMIT_ID: ${{github.event.client_payload.commitId || github.sha || github.run_id}}
@@ -144,20 +144,11 @@ jobs:
           node-version: ${{ env.BUILD_ENVIRONEMENT_VERSION }}
       - name: 'Run :: Build'
         run: >-
-          ${{ env.APP_INSTALL_DEPS_PRE_COMMAND }} && cd ${{ env.YML_PATH }} &&
-          ${{ env.APP_INSTALL_DEPS_COMMAND }} esbuild -g  && sam build
+          ${{ env.APP_INSTALL_DEPS_PRE_COMMAND }} && ${{
+          env.APP_INSTALL_DEPS_COMMAND }} esbuild -g  && sam build -t ${{
+          env.YML_PATH }}
       - name: 'Run :: Deploy to Development'
-        run: >-
-          sam deploy --stack-name  ${{ env.STACK_NAME }} --capabilities
-          CAPABILITY_IAM --parameter-overrides
-          'ParameterKey=BillingAPI,ParameterValue=${{ env.BILLING_API }}
-          ParameterKey=NerAPI,ParameterValue=${{ env.NER_API }}
-          ParameterKey=QnaAPI,ParameterValue=${{ env.QNA_API }}
-          ParameterKey=GoogleClientId,ParameterValue=${{ env.GOOGLE_CLIENT_ID }}
-          ParameterKey=GoogleClientSecret,ParameterValue=${{
-          env.GOOGLE_CLIENT_SECRET }}
-          ParameterKey=EmailFromAddressSource,ParameterValue=${{
-          env.EMAIL_FROM_ADRESS_SOURCE }}' --resolve-s3
+        run: ${{ env.SAM_DEPLOY_COMMAND }} ${{ env.SAM_DEPLOY_ARGS }}
       - name: Step 1
         run: echo "STEP 1 RUNNING"
   _status-success:
@@ -245,4 +236,3 @@ jobs:
                 exit 1
               fi
             
-# ggg
