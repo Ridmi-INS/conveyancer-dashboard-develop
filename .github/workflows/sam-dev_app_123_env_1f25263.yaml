@@ -5,7 +5,7 @@ name: sam-dev_app_123_env_1f25263 Pipeline (Skyu Generated)
       - main
   workflow_dispatch: {}
   repository_dispatch:
-    types: pipeline_5d129cf0-58c6-4a87-aa8b-b62837cbbb77
+    types: pipeline_c8f9c0b3-a0ea-45eb-a06f-a14c5c40d7d3
 env:
   ENCODED_PIPELINE_SECRET: ${{secrets.CONVEYANCERDASHBOARDDEVELOP_SAMDEV_APP_123_ENV_1F25263}}
   COMMIT_ID: ${{github.event.client_payload.commitId || github.sha || github.run_id}}
@@ -145,11 +145,13 @@ jobs:
       - name: 'Run :: Validate'
         run: sam validate -t ${{ env.YML_PATH }}
       - name: 'Run :: Build'
-        run: >-
-          ${{ env.APP_INSTALL_DEPS_PRE_COMMAND }} && ${{
-          env.APP_INSTALL_DEPS_COMMAND }} esbuild -g  && ${{
-          env.SAM_BUILD_COMMAND }} -t ${{ env.YML_PATH }} - if
-          ne(env.SAM_BUILD_COMMAND, '') && ${{ env.SAM_BUILD_COMMAND }} - endif
+        run: |2-
+
+              if ["$SAM_BUILD_ARGS" != ""];then    
+                ${{ env.APP_INSTALL_DEPS_PRE_COMMAND }} && ${{ env.APP_INSTALL_DEPS_COMMAND }} esbuild -g  && ${{ env.SAM_BUILD_COMMAND }} -t ${{ env.YML_PATH }} && ${{ env.SAM_BUILD_ARGS }}
+              else
+                ${{ env.APP_INSTALL_DEPS_PRE_COMMAND }} && ${{ env.APP_INSTALL_DEPS_COMMAND }} esbuild -g  && ${{ env.SAM_BUILD_COMMAND }} -t ${{ env.YML_PATH }}
+              fi
       - name: 'Run :: Deploy to Development'
         run: >-
           ${{ env.SAM_DEPLOY_COMMAND }} -t ${{ env.YML_PATH }} ${{
